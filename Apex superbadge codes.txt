@@ -1,0 +1,339 @@
+N.Shriram 
+
+Apex Specialist Super badge - Source Codes
+
+Classes
+
+public with sharing class CreateDefaultData{
+    Static Final String TYPE_ROUTINE_MAINTENANCE = 'Routine Maintenance';
+    //gets value from custom metadata How_We_Roll_Settings__mdt to know if Default data was created
+    @AuraEnabled
+    public static Boolean isDataCreated() {
+        How_We_Roll_Settings__c	customSetting = How_We_Roll_Settings__c.getOrgDefaults();
+        return customSetting.Is_Data_Created__c;
+    } 
+
+    //creates Default Data for How We Roll application
+    @AuraEnabled
+    public static void createDefaultData(){
+        List<Vehicle__c> vehicles = createVehicles();
+        List<Product2> equipment = createEquipment();
+        List<Case> maintenanceRequest = createMaintenanceRequest(vehicles);
+        List<Equipment_Maintenance_Item__c> joinRecords = createJoinRecords(equipment, maintenanceRequest);
+
+        updateCustomSetting(true);
+    }
+
+
+    public static void updateCustomSetting(Boolean isDataCreated){
+        How_We_Roll_Settings__c	customSetting = How_We_Roll_Settings__c.getOrgDefaults();
+        customSetting.Is_Data_Created__c = isDataCreated;
+        upsert customSetting;
+    }
+
+    public static List<Vehicle__c> createVehicles(){
+        List<Vehicle__c> vehicles = new List<Vehicle__c>();
+        vehicles.add(new Vehicle__c(Name = 'Toy Hauler RV', Air_Conditioner__c = true, Bathrooms__c = 1, Bedrooms__c = 1, Model__c = 'Toy Hauler RV'));
+        vehicles.add(new Vehicle__c(Name = 'Travel Trailer RV', Air_Conditioner__c = true, Bathrooms__c = 2, Bedrooms__c = 2, Model__c = 'Travel Trailer RV'));
+        vehicles.add(new Vehicle__c(Name = 'Teardrop Camper', Air_Conditioner__c = true, Bathrooms__c = 1, Bedrooms__c = 1, Model__c = 'Teardrop Camper'));
+        vehicles.add(new Vehicle__c(Name = 'Pop-Up Camper', Air_Conditioner__c = true, Bathrooms__c = 1, Bedrooms__c = 1, Model__c = 'Pop-Up Camper'));
+        insert vehicles;
+        return vehicles;
+    }
+
+    public static List<Product2> createEquipment(){
+        List<Product2> equipments = new List<Product2>();
+        equipments.add(new Product2(Warehouse_SKU__c = '55d66226726b611100aaf741',name = 'Generator 1000 kW', Replacement_Part__c = true,Cost__c = 100 ,Maintenance_Cycle__c = 100));
+        equipments.add(new Product2(name = 'Fuse 20B',Replacement_Part__c = true,Cost__c = 1000, Maintenance_Cycle__c = 30  ));
+        equipments.add(new Product2(name = 'Breaker 13C',Replacement_Part__c = true,Cost__c = 100  , Maintenance_Cycle__c = 15));
+        equipments.add(new Product2(name = 'UPS 20 VA',Replacement_Part__c = true,Cost__c = 200  , Maintenance_Cycle__c = 60));
+        insert equipments;
+        return equipments;
+
+    }
+
+    public static List<Case> createMaintenanceRequest(List<Vehicle__c> vehicles){
+        List<Case> maintenanceRequests = new List<Case>();
+        maintenanceRequests.add(new Case(Vehicle__c = vehicles.get(1).Id, Type = TYPE_ROUTINE_MAINTENANCE, Date_Reported__c = Date.today()));
+        maintenanceRequests.add(new Case(Vehicle__c = vehicles.get(2).Id, Type = TYPE_ROUTINE_MAINTENANCE, Date_Reported__c = Date.today()));
+        insert maintenanceRequests;
+        return maintenanceRequests;
+    }
+
+    public static List<Equipment_Maintenance_Item__c> createJoinRecords(List<Product2> equipment, List<Case> maintenanceRequest){ 
+        List<Equipment_Maintenance_Item__c> joinRecords = new List<Equipment_Maintenance_Item__c>();
+        joinRecords.add(new Equipment_Maintenance_Item__c(Equipment__c = equipment.get(0).Id, Maintenance_Request__c = maintenanceRequest.get(0).Id));
+        joinRecords.add(new Equipment_Maintenance_Item__c(Equipment__c = equipment.get(1).Id, Maintenance_Request__c = maintenanceRequest.get(0).Id));
+        joinRecords.add(new Equipment_Maintenance_Item__c(Equipment__c = equipment.get(2).Id, Maintenance_Request__c = maintenanceRequest.get(0).Id));
+        joinRecords.add(new Equipment_Maintenance_Item__c(Equipment__c = equipment.get(0).Id, Maintenance_Request__c = maintenanceRequest.get(1).Id));
+        joinRecords.add(new Equipment_Maintenance_Item__c(Equipment__c = equipment.get(1).Id, Maintenance_Request__c = maintenanceRequest.get(1).Id));
+        joinRecords.add(new Equipment_Maintenance_Item__c(Equipment__c = equipment.get(2).Id, Maintenance_Request__c = maintenanceRequest.get(1).Id));
+        insert joinRecords;
+        return joinRecords;
+
+    }
+}
+................................................................
+@isTest
+private class CreateDefaultDataTest {
+    @isTest
+    static void createData_test(){
+        Test.startTest();
+        CreateDefaultData.createDefaultData();
+        List<Vehicle__c> vehicles = [SELECT Id FROM Vehicle__c];
+        List<Product2> equipment = [SELECT Id FROM Product2];
+        List<Case> maintenanceRequest = [SELECT Id FROM Case];
+        List<Equipment_Maintenance_Item__c> joinRecords = [SELECT Id FROM Equipment_Maintenance_Item__c];
+
+        System.assertEquals(4, vehicles.size(), 'There should have been 4 vehicles created');
+        System.assertEquals(4, equipment.size(), 'There should have been 4 equipment created');
+        System.assertEquals(2, maintenanceRequest.size(), 'There should have been 2 maintenance request created');
+        System.assertEquals(6, joinRecords.size(), 'There should have been 6 equipment maintenance items created');
+
+    }
+
+    @isTest
+    static void updateCustomSetting_test(){
+        How_We_Roll_Settings__c	customSetting = How_We_Roll_Settings__c.getOrgDefaults();
+        customSetting.Is_Data_Created__c = false;
+        upsert customSetting;
+
+        System.assertEquals(false, CreateDefaultData.isDataCreated(), 'The custom setting How_We_Roll_Settings__c.Is_Data_Created__c should be false');
+
+        customSetting.Is_Data_Created__c = true;
+        upsert customSetting;
+
+        System.assertEquals(true, CreateDefaultData.isDataCreated(), 'The custom setting How_We_Roll_Settings__c.Is_Data_Created__c should be true');
+
+    }
+}
+-----------------------------------------------------------------------------------------------------------------------------------------------
+public with sharing class MaintenanceRequestHelper {
+    public static void updateWorkOrders() {
+        List<case> newCaseList = new List<case>();
+        Integer avgAmount=10000;
+
+        List<Equipment_Maintenance_Item__c> newEMI = new List<Equipment_Maintenance_Item__c>();
+        List<case> caseList = [SELECT id,Vehicle__c,Subject,ProductID,Product__c, (SELECT id from Equipment_Maintenance_Items__r) from case where status='closed' and Type IN ('Repair', 'Routine Maintenance') and ID IN :Trigger.new LIMIT 200];
+        Map<id,Equipment_Maintenance_Item__c> equip = new map<id,Equipment_Maintenance_Item__c>([Select ID, Equipment__c, Quantity__c,Equipment__r.id,Equipment__r.Maintenance_Cycle__c from Equipment_Maintenance_Item__c ]);
+        for(case c: caseList){
+            case newCase = new Case();
+            newCase.Type = 'Routine Maintenance';
+            newCase.Status = 'New';
+            newCase.Vehicle__c = c.Vehicle__c;
+            newCase.Subject =  String.isBlank(c.Subject) ? 'Routine Maintenance Request' : c.Subject;
+            newCase.Date_Reported__c = Date.today();
+            newCase.ProductId = c.ProductId;
+            newCase.Product__c = c.Product__c;
+            newCase.parentID = c.Id;
+
+
+            for(Equipment_Maintenance_Item__c emi : c.Equipment_Maintenance_Items__r ){
+                avgAmount = Math.min(avgAmount,Integer.valueOf(equip.get(emi.id).Equipment__r.Maintenance_Cycle__c));
+                newEMI.add(new Equipment_Maintenance_Item__c(
+                    Equipment__c = equip.get(emi.id).Equipment__c,
+                    Maintenance_Request__c = c.id,
+                    Quantity__c = equip.get(emi.id).Quantity__c));
+            }
+            Date dueDate = date.TODAY().adddays(avgAmount);
+            newCase.Date_Due__c =dueDate;
+            newCaseList.add(newCase);
+
+        }
+        if(newCaseList.size()>0){
+            Database.insert(newCaseList);    
+        }
+
+        for(Case c2: newCaseList){
+            for(Equipment_Maintenance_Item__c emi2 : newEmi){
+                if(c2.parentID == emi2.Maintenance_Request__c){
+                    emi2.Maintenance_Request__c = c2.id;    
+                }
+            }
+        }
+
+        if(newEmi.size()>0){
+            Database.insert(newEmi);    
+        }     
+    }        
+}
+.....................................................................................
+@istest
+public with sharing class MaintenanceRequestHelperTest {
+    @istest
+    public static void BulkTesting(){
+        product2 pt2 = new product2(Name = 'tester',Maintenance_Cycle__c = 10, Replacement_Part__c = true);
+
+        Database.insert(pt2); 
+
+
+        List<case> caseList = new List<case>();
+        for(Integer i=0;i<300;i++){
+            caseList.add(new case(
+                Type = 'Routine Maintenance',
+                Status = 'Closed',
+                Subject = 'testing',
+                Date_Reported__c = Date.today(),
+                ProductId = pt2.id
+            ));
+        }
+        if(caseList.size()>0){   
+            Database.insert(caseList);
+            System.debug(pt2.id);
+            System.debug(caseList.size());
+        } 
+
+
+        List<Equipment_Maintenance_Item__c> newEMI = new List<Equipment_Maintenance_Item__c>();
+        for(Integer i=0;i<5;i++){
+            newEMI.add(new Equipment_Maintenance_Item__c(
+                Equipment__c = pt2.id,
+                Maintenance_Request__c = caseList[1].id,
+                Quantity__c = 10));
+        }
+        if(newEmi.size()>0){
+            Database.insert(newEmi);
+        }
+
+        for(case c :caseList){
+            c.Subject = 'For Testing';
+        } 
+        Database.update(caseList);
+        Integer newcase = [Select count() from case where ParentId = :caseList[0].id];
+        System.assertEquals(1, newcase);
+
+    }
+
+    @istest 
+    public static void positive(){
+        product2 pt2 = new product2(Name = 'tester',Maintenance_Cycle__c = 10);
+        insert pt2;
+
+        Case cParent = new Case(Type = 'Repair',status = 'Closed',Date_Reported__c = Date.today(),
+                                ProductId = pt2.id);
+        insert cParent;
+        Case cChild = new Case(Type = 'Repair',status = 'Closed',Date_Reported__c = Date.today(),
+                               ProductId = pt2.id,parentID = cParent.ParentId);
+        insert cChild;
+
+        cParent.subject = 'child refrecer record';
+        update cParent;
+
+        Integer newcase = [Select count() from case where ParentId = :cParent.id];
+        System.assertEquals(1, newcase);
+
+    }
+    @istest public static void negetive(){
+        product2 pt2 = new product2(Name = 'tester',Maintenance_Cycle__c = 10);
+        insert pt2;
+
+        Case c = new Case(Type = 'Repair',status = 'New',Date_Reported__c = Date.today(),
+                          ProductId = pt2.id);
+        insert c;
+
+        c.Status = 'Working';
+        update c;
+
+
+        Integer newcase = [Select count() from case where ParentId = :c.id];
+        System.assertEquals(0, newcase);
+    }
+
+
+
+
+}
+--------------------------------------------------------------------------------------------------------------------------------------------
+public with sharing class WarehouseCalloutService implements Queueable, Database.AllowsCallouts{
+    public List<product2> equip = new List<product2>();
+    private static final String WAREHOUSE_URL = 'https://th-superbadge-apex.herokuapp.com/equipment';
+
+
+
+    public void execute(QueueableContext context) {
+        //System.debug('Equipments'+equip );
+        Http h = new Http();
+        HttpRequest httpReq = new HttpRequest();
+        httpReq.setMethod('GET');
+        httpReq.setHeader('Content-Type','application/json'); 
+        httpReq.setEndpoint(WAREHOUSE_URL);
+        HttpResponse res = h.send(httpReq);
+        List<Object> results = (List<Object>) JSON.deserializeUntyped(res.getBody());
+        System.debug(results.size());
+
+        for(Object fld : results){
+            Map<String,Object> entry = (Map<String,Object>)fld;
+            equip.add(new product2(
+                Warehouse_SKU__c = String.valueOf(entry.get('_id')+''),
+                Cost__c = Decimal.valueOf(entry.get('cost')+''), 
+                Lifespan_Months__c = Decimal.valueOf(entry.get('lifespan')+'') , 
+                Maintenance_Cycle__c = Decimal.valueOf(entry.get('maintenanceperiod')+''),
+                Name = String.valueOf(entry.get('name')+''),
+                QuantityUnitOfMeasure = String.valueOf(entry.get('quantity')+'') , 
+                Replacement_Part__c = Boolean.valueOf(entry.get('replacement') +''), 
+                StockKeepingUnit = String.valueOf(entry.get('sku')+'')
+            ));
+        } 
+        if(!equip.isEmpty())
+        {
+            upsert equip Warehouse_SKU__c;
+            system.debug('list got updated. Size: '+equip.size());
+        }
+
+    }
+}
+..................................................................................................................
+@istest
+global class WarehouseCalloutServiceMock implements HttpCalloutMock{
+    // implement http mock callout
+    global HttpResponse respond(HttpRequest request){
+        HttpResponse response = new HttpResponse();
+        response.setHeader('Content-Type', 'application/json');
+        response.setBody('[{"_id":"55d66226726b611100aaf741","replacement":true,"quantity":5,"name":"Generator 1000 kW","maintenanceperiod":365,"lifespan":120,"cost":5000,"sku":"220000"}]');
+        response.setStatusCode(200);
+        return response; 
+    }
+
+}
+.................................................................................................
+@IsTest
+private class WarehouseCalloutServiceTest {
+    // implement your mock callout test here
+    @isTest static void mainTest(){    
+        Test.setMock(HttpCalloutMock.class, new WarehouseCalloutServiceMock());
+        Test.startTest();
+        Id jobID = System.enqueueJob(new WarehouseCalloutService());
+        //System.assertEquals('Queued',aaj.status);
+        Test.stopTest();
+        AsyncApexJob aaj = [SELECT Id, Status, NumberOfErrors FROM AsyncApexJob WHERE Id = :jobID];
+        System.assertEquals('Completed',aaj.status);
+        System.assertEquals(0, aaj.NumberOfErrors);
+    }
+}
+-----------------------------------------------------------------------------------------------------------------
+global with sharing class WarehouseSyncSchedule implements Schedulable{
+    // implement scheduled code here
+    global void execute(SchedulableContext sc){
+        System.enqueueJob(new WarehouseCalloutService());
+
+    }
+}
+.....................................................................................................
+@isTest
+public with sharing class WarehouseSyncScheduleTest {
+    // implement scheduled code here
+    // 
+    @isTest static void test() {
+        String scheduleTime = '00 00 00 * * ? *';
+        Test.startTest();
+        Test.setMock(HttpCalloutMock.class, new WarehouseCalloutServiceMock());
+        String jobId = System.schedule('Warehouse Time to Schedule to test', scheduleTime, new WarehouseSyncSchedule());
+        CronTrigger c = [SELECT State FROM CronTrigger WHERE Id =: jobId];
+        System.assertEquals('WAITING', String.valueOf(c.State), 'JobId does not match');
+
+        Test.stopTest();
+    }
+}
+
+
+
